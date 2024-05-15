@@ -33,8 +33,10 @@ func main() {
 		log.Fatalf("Service check failed: %s", err)
 	}
 
-	// Отправка стартового сообщения при запуске бота
+	// Проверка оповещений при запуске
 	botService := bot.NewBotService(cfg, lg, botAPI)
+
+	// Отправка стартового сообщения при запуске бота
 	botService.SendStartupMessage()
 
 	// Настройка таймера для регулярного опроса
@@ -43,8 +45,19 @@ func main() {
 
 	// Мапа для отслеживания времени последней отправки уведомлений
 	lastSent := make(map[string]time.Time)
+
 	// Переменная для отслеживания активных тревог
 	var alertsActive bool = false
+
+	messageChannel := make(chan string, 10) // Канал для сообщений
+
+	// Запуск горутины для отправки сообщений
+	go func() {
+		for message := range messageChannel {
+			botService.SendTelegramMessage(botAPI, message)
+			time.Sleep(1 * time.Second)
+		}
+	}()
 
 	// Основной цикл опроса
 	for range ticker.C {
@@ -56,12 +69,12 @@ func main() {
 			}
 			for _, alert := range alerts.Data.Alerts {
 				// уникальный ключ для каждого оповещения
-				key := alert.Labels.Alertname + alert.Labels.Instance
+				key := alert.Labels.Alertname + alert.Labels.Instance + alert.Labels.Job
 				lastTime, exists := lastSent[key]
 				// Проверка, нужно ли отправить повторное уведомление
 				if !exists || time.Since(lastTime) >= cfg.RepeatNotificationInterval {
 					message := alertmanager.FormatAlertMessage(alert)
-					botService.SendTelegramMessage(botAPI, message)
+					messageChannel <- message // Отправка сообщения через канал
 					lastSent[key] = time.Now()
 					lg.Debug("Alert sent", "alert", message)
 				}
