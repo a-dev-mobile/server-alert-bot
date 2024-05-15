@@ -21,3 +21,6 @@
 
 # Ignore all markdown and documentation files
 *.md
+
+# Exclude specific configuration files
+config/config.yaml

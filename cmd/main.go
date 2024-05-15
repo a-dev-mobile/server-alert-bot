@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/a-dev-mobile/server-alert-bot/internal/alertmanager"
@@ -18,12 +20,18 @@ func main() {
 	// Создание объекта бота с использованием токена
 	botAPI, err := tgbotapi.NewBotAPI(cfg.BotToken)
 	if err != nil {
-
 		log.Fatalf("Panic due to failure in creating bot API: %s", err)
 	}
 
 	botAPI.Debug = false
 	lg.Info("Authorized on account", "username", botAPI.Self.UserName)
+
+	// Проверка сервисов при запуске
+	if err := checkServices(cfg, lg); err != nil {
+		botService := bot.NewBotService(cfg, lg, botAPI)
+		botService.SendServiceDownMessage(err.Error())
+		log.Fatalf("Service check failed: %s", err)
+	}
 
 	// Отправка стартового сообщения при запуске бота
 	botService := bot.NewBotService(cfg, lg, botAPI)
@@ -69,22 +77,27 @@ func main() {
 }
 
 func initializeApp() (*config.Config, *slog.Logger) {
-
 	cfg := getConfigOrFail()
-
 	lg := logging.SetupLogger(cfg)
-
 	return cfg, lg
 }
 
 func getConfigOrFail() *config.Config {
-
-	cfg, err := config.LoadConfig("../config","config.yaml")
-
+	cfg, err := config.LoadConfig("../config", "config.yaml")
 	if err != nil {
 		log.Fatalf("Error loading config: %s", err)
-
 	}
-
 	return cfg
+}
+
+func checkServices(cfg *config.Config, lg *slog.Logger) error {
+	services := []string{cfg.AlertManagerURL}
+	for _, url := range services {
+		resp, err := http.Get(url)
+		if err != nil || resp.StatusCode != 200 {
+			lg.Error("Service is down", "url", url, "status", resp.Status)
+			return fmt.Errorf("service at %s is down", url)
+		}
+	}
+	return nil
 }
